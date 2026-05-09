@@ -1,0 +1,10 @@
+[project]
+name = "caonima"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "gobject>=0.1.0",
+    "pydbus>=0.6.0",
+]
