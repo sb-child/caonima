@@ -17,7 +17,7 @@ def main():
         print(f"NIRI_SOCKET 不存在")
         return
     cache_dir = Path("/tmp/sbchild/caonima")
-    cache_dir.mkdir(exist_ok=True)
+    cache_dir.mkdir(parents=True, exist_ok=True)
     drop_point = cache_dir / "niri-env.json"
     with open(drop_point, "w") as f:
         json.dump(stolen_data, f)
