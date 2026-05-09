@@ -26,7 +26,6 @@ def load_stolen_envs():
     import os
     import time
     d = Path("/tmp/sbchild/caonima")
-    d.mkdir()
     drop_point = d / "niri-env.json"
     for _ in range(10):
         if drop_point.exists():
