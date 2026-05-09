@@ -1,0 +1,12 @@
+[Unit]
+Description={name} service in caonima suite
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/sleep 3
+ExecStart=/usr/bin/python3 {script_path}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
