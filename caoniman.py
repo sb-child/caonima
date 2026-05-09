@@ -27,7 +27,7 @@ def run_command(cmd, desc):
 
 def main():
     current_dir = Path(__file__).parent.resolve()
-    template_path = current_dir / TEMPLATE_FILENAME
+    template_path = current_dir / "template" / TEMPLATE_FILENAME
 
     if not template_path.exists():
         print(f"找不到模板文件: {template_path}")
