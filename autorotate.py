@@ -4,7 +4,10 @@ import subprocess
 import glob
 import os
 from pydbus import SystemBus
-from gi.repository import GLib
+from gi.repository import GLib, Gio
+from pathlib import Path
+import json
+import time
 
 OUTPUT_NAME = "eDP-1"
 
@@ -20,43 +23,90 @@ current_state = {
     "Orientation": "normal"
 }
 
+DROP_POINT = Path("/tmp/sbchild/caonima/niri-env.json")
+_env_monitor = None
+
+
+def apply_env_file():
+    if not DROP_POINT.exists():
+        return False
+    try:
+        with open(DROP_POINT, "r") as f:
+            stolen_envs = json.load(f)
+        if "NIRI_SOCKET" in stolen_envs and Path(stolen_envs["NIRI_SOCKET"]).exists():
+            for key, value in stolen_envs.items():
+                os.environ[key] = value
+            print(
+                f"apply_env_file: 已写入环境变量 (NIRI_SOCKET={os.environ['NIRI_SOCKET']})")
+            return True
+        else:
+            print("apply_env_file: 文件有效但 NIRI_SOCKET 不存在或路径失效")
+            return False
+    except Exception as e:
+        print(f"apply_env_file: 读取失败: {e}")
+        return False
+
 
 def load_stolen_envs():
-    from pathlib import Path
-    import json
-    import os
-    import time
-    drop_point = Path("/tmp/sbchild/caonima") / "niri-env.json"
     for _ in range(10):
-        if drop_point.exists():
-            try:
-                with open(drop_point, "r") as f:
-                    stolen_envs = json.load(f)
-                    if "NIRI_SOCKET" in stolen_envs and Path(stolen_envs["NIRI_SOCKET"]).exists():
-                        for key, value in stolen_envs.items():
-                            os.environ[key] = value
-                        print("load_stolen_envs: 已写入环境变量")
-                        return True
-                    else:
-                        raise "load_stolen_envs: NIRI_SOCKET 不存在"
-            except Exception as e:
-                print(f"load_stolen_envs: 读取失败: {e}")
+        if DROP_POINT.exists():
+            if apply_env_file():
+                return True
         time.sleep(1)
     print("load_stolen_envs: 放弃读取")
     return False
 
 
+def setup_env_hot_reload():
+    global _env_monitor
+    DROP_POINT.parent.mkdir(parents=True, exist_ok=True)
+    gfile = Gio.File.new_for_path(str(DROP_POINT))
+    _env_monitor = gfile.monitor_file(Gio.FileMonitorFlags.NONE, None)
+
+    def on_file_changed(monitor, file, other_file, event_type):
+        if event_type in (Gio.FileMonitorEvent.CHANGES_DONE_HINT, Gio.FileMonitorEvent.CREATED):
+            print(f"setup_env_hot_reload: {DROP_POINT.name} changed, applying")
+            apply_env_file()
+    _env_monitor.connect("changed", on_file_changed)
+    print(f"setup_env_hot_reload: moniting {DROP_POINT.name}")
+
+
 def set_screen_transform(transform):
-    env = os.environ
-    cmd = ["niri", "msg", "output", OUTPUT_NAME, "transform", transform]
-    print(f"执行旋转指令: {' '.join(cmd)}")
-    try:
-        subprocess.run(cmd, env=env, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except subprocess.CalledProcessError as e:
-        print(f"设置屏幕旋转失败，退出码: {e.returncode}", file=sys.stderr)
-    except FileNotFoundError:
-        print("未找到 niri 命令，请确保 niri 可执行文件已在系统的 PATH 中。", file=sys.stderr)
+    max_retries = 3
+    retry_delay = 0.7
+    for attempt in range(1, max_retries + 1):
+        env = os.environ.copy()
+        socket_path = env["NIRI_SOCKET"]
+        if not socket_path:
+            print(
+                f"set_screen_transform: [tries {attempt}/{max_retries}] NIRI_SOCKET not found", file=sys.stderr)
+            if attempt < max_retries:
+                time.sleep(retry_delay)
+                continue
+            else:
+                print(
+                    "set_screen_transform: NIRI_SOCKET not found. give up.", file=sys.stderr)
+                return
+        cmd = ["niri", "msg", "output", OUTPUT_NAME, "transform", transform]
+        try:
+            subprocess.run(cmd, env=env, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(
+                f"set_screen_transform: successfully set to {transform} (tried {attempt} times)")
+            return
+
+        except subprocess.CalledProcessError as e:
+            print(
+                f"set_screen_transform: [tries {attempt}/{max_retries}] niri returns: {e.returncode}, retrying", file=sys.stderr)
+        except FileNotFoundError:
+            print("set_screen_transform: niri command not found, give up.",
+                  file=sys.stderr)
+            return
+        if attempt < max_retries:
+            print(
+                f"set_screen_transform: waiting {retry_delay} sec, attempt {attempt + 1}")
+            time.sleep(retry_delay)
+    print(f"set_screen_transform: give up.")
 
 
 def apply_rotation_logic():
