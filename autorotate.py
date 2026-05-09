@@ -170,4 +170,5 @@ def main():
 
 if __name__ == "__main__":
     load_stolen_envs()
+    setup_env_hot_reload()
     main()
