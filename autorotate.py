@@ -20,25 +20,35 @@ current_state = {
 }
 
 
-def get_niri_socket():
-    sockets = glob.glob("/run/user/*/niri-*.sock")
-    if sockets:
-        return sockets[0]
-    return None
+def load_stolen_envs():
+    from pathlib import Path
+    import json
+    import os
+    import time
+    drop_point = Path("/tmp/sbchild/caonima") / "niri-env.json"
+    for _ in range(10):
+        if drop_point.exists():
+            try:
+                with open(drop_point, "r") as f:
+                    stolen_envs = json.load(f)
+                    if "NIRI_SOCKET" in stolen_envs and Path(stolen_envs["NIRI_SOCKET"]).exists():
+                        for key, value in stolen_envs.items():
+                            os.environ[key] = value
+                        print("load_stolen_envs: 已写入环境变量")
+                        return True
+                    else:
+                        raise "load_stolen_envs: NIRI_SOCKET 不存在"
+            except Exception as e:
+                print(f"load_stolen_envs: 读取失败: {e}")
+        time.sleep(1)
+    print("load_stolen_envs: 放弃读取")
+    return False
 
 
 def set_screen_transform(transform):
-    socket_path = get_niri_socket()
-    if not socket_path:
-        print("未找到 NIRI_SOCKET，niri 似乎未运行。", file=sys.stderr)
-        return
-
-    env = os.environ.copy()
-    env["NIRI_SOCKET"] = socket_path
-
+    env = os.environ
     cmd = ["niri", "msg", "output", OUTPUT_NAME, "transform", transform]
     print(f"执行旋转指令: {' '.join(cmd)}")
-
     try:
         subprocess.run(cmd, env=env, check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -81,6 +91,7 @@ def on_properties_changed(interface_name, changed_properties, invalidated_proper
 def main():
     bus = SystemBus()
     try:
+        # https://github.com/sb-child/laptop-sensor-daemon
         proxy = bus.get("org.sbchild.LaptopSensorDaemon",
                         "/org/sbchild/LaptopSensorDaemon")
     except Exception as e:
@@ -107,4 +118,5 @@ def main():
 
 
 if __name__ == "__main__":
+    load_stolen_envs()
     main()

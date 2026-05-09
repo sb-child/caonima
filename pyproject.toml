@@ -1,10 +1,9 @@
 [project]
 name = "caonima"
 version = "0.1.0"
-description = "Add your description here"
+description = "some hacks for https://github.com/sb-child/nima"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = [
-    "gobject>=0.1.0",
-    "pydbus>=0.6.0",
-]
+dependencies = ["gobject>=0.1.0", "pydbus>=0.6.0"]
+authors = [{ name = "sbchild", email = "sbchild0@gmail.com" }]
+license = "MIT"
