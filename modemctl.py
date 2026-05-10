@@ -182,6 +182,7 @@ def on_device_setup(serial_port: str):
         "5G模块已接入", f"串口设备: {serial_port}\n等待初始化...", icon="drive-removable-media")
 
     if not wait_module_quiet(serial_port, quiet_time=1.0):
+        # 如果卡在这里记得 sudo systemctl disable --now ModemManager
         logging.warning("初始化期间设备丢失，提前终止流程。")
         return
 
