@@ -8,6 +8,7 @@ TEMPLATE_FILENAME = "cnm.service"
 
 SERVICES_TO_DEPLOY = {
     "autorotate": "autorotate.py",
+    "fuck-pipewire-pulse": "fuck-pipewire-pulse.py",
     # "fsk": "fuck-screen-keyboard.py"
 }
 
@@ -50,7 +51,7 @@ def main():
             name=service_name,
             script_path=str(script_path)
         )
-        target_service_filename = f"caonima-{service_name}.service"
+        target_service_filename = f"cnm-{service_name}.service"
         target_service_file = SYSTEMD_USER_DIR / target_service_filename
         with open(target_service_file, "w", encoding="utf-8") as f:
             f.write(service_content)
