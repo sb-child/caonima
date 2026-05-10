@@ -21,9 +21,10 @@ def run_command(cmd, desc):
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE,
                        stderr=subprocess.PIPE, text=True)
         print("执行成功")
+        return True
     except subprocess.CalledProcessError as e:
         print(f"错误信息: {e.stderr.strip()}")
-        sys.exit(1)
+        return False
 
 
 def main():
@@ -60,10 +61,14 @@ def main():
     if not installed_services:
         print("没有成功生成任何服务，脚本退出。")
         sys.exit(1)
+    for service_file in installed_services:
+        # 我们是要热更新
+        cmd = ["systemctl", "--user", "stop", service_file]
+        run_command(cmd, f"停止 {service_file} 服务")
     run_command(["systemctl", "--user", "daemon-reload"], "重载守护进程")
     for service_file in installed_services:
         cmd = ["systemctl", "--user", "enable", "--now", service_file]
-        run_command(cmd, f"启动 {service_file} 服务")
+        run_command(cmd, f"启动 {service_file} 服务并设为自启动")
 
 
 if __name__ == "__main__":
