@@ -5,8 +5,11 @@ import threading
 import time
 import shlex
 import serial
+import pwd
 from pathlib import Path
 import logging
+import json
+import re
 
 # 目标设备的 VID 和 PID (移远 RG200U/Rx500U 系列)
 TARGET_VID = "2c7c"
@@ -27,6 +30,36 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
     stream=sys.stdout  # 强制输出到标准输出，方便 systemd 抓取
 )
+
+
+def get_envs():
+    cache_dir = Path("/tmp/sbchild/caonima")
+    drop_point = cache_dir / "niri-env.json"
+    if not drop_point.exists():
+        logging.error(
+            f"get_envs(): 找不到环境缓存文件 {drop_point}, 请先运行 spawn-me-first.py")
+        return None
+    try:
+        with open(drop_point, "r") as f:
+            env_data = json.load(f)
+    except json.JSONDecodeError:
+        logging.error(f"get_envs(): 无法解析 {drop_point}, JSON 格式损坏")
+        return None
+    except Exception as e:
+        logging.error(f"get_envs(): 读取文件时发生异常: {e}")
+        return None
+    if "NIRI_SOCKET" not in env_data:
+        logging.error("get_envs(): JSON 数据中未找到 NIRI_SOCKET 记录")
+        return None
+    niri_socket_path = Path(env_data["NIRI_SOCKET"])
+    if not niri_socket_path.exists():
+        logging.error(
+            f"get_envs(): NIRI_SOCKET 指向的路径不存在 ({niri_socket_path})")
+        return None
+    if not niri_socket_path.is_socket():
+        logging.warning(
+            f"get_envs(): NIRI_SOCKET 指向的路径存在, 但似乎不是一个套接字文件 ({niri_socket_path})")
+    return dict(env_data)
 
 
 def send_at_command(port_path: str, command: str, timeout: float = 2.0):
@@ -111,12 +144,20 @@ def parse_qnetdevstatus(raw_output: str) -> dict:
 
 
 def send_notification(title, message, app_name="cnm-modemctl", icon="drive-removable-media", timeout=5000):
-    real_user = os.environ.get("SUDO_USER") or os.getlogin()
-    try:
-        uid = subprocess.check_output(
-            ["id", "-u", real_user], text=True).strip()
-    except:
-        uid = "1000"
+    envs = get_envs()
+    if envs is not None and "NIRI_SOCKET" in envs:
+        skt = envs["NIRI_SOCKET"]
+        match = re.search(r'/run/user/(\d+)/', skt)
+        if match:
+            uid = int(match.group(1))
+            logging.info(f"send_notification: uid = {uid}")
+        else:
+            logging.error("send_notification: 在 NIRI_SOCKET 中找不到有用的东西")
+            return
+    else:
+        logging.error("send_notification: 获取环境变量失败")
+        return
+    real_user = pwd.getpwuid(uid)[0]
     dbus_addr = f"unix:path=/run/user/{uid}/bus"
     cmd = [
         "sudo", "-u", real_user, f"DBUS_SESSION_BUS_ADDRESS={dbus_addr}",
