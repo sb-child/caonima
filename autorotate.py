@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import sys
 import subprocess
-import glob
 import os
 from pydbus import SystemBus
 from gi.repository import GLib, Gio  # type: ignore
