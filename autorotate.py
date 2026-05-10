@@ -4,7 +4,7 @@ import subprocess
 import glob
 import os
 from pydbus import SystemBus
-from gi.repository import GLib, Gio
+from gi.repository import GLib, Gio  # type: ignore
 from pathlib import Path
 import json
 import time

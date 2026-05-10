@@ -8,5 +8,9 @@ ExecStart=/usr/bin/python3 {script_path}
 Restart=on-failure
 RestartSec=5
 
+StandardOutput = journal
+StandardError = journal
+SyslogIdentifier = cnm-{name}
+
 [Install]
 WantedBy=default.target

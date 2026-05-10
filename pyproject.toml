@@ -4,6 +4,12 @@ version = "0.1.0"
 description = "some hacks for https://github.com/sb-child/nima"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = ["gobject>=0.1.0", "pydbus>=0.6.0"]
+dependencies = [
+    "evdev>=1.9.3",
+    "gobject>=0.1.0",
+    "pydbus>=0.6.0",
+    "pygobject>=3.56.3",
+    "pyserial>=3.5",
+]
 authors = [{ name = "sbchild", email = "sbchild0@gmail.com" }]
 license = "MIT"

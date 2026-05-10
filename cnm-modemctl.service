@@ -1,0 +1,22 @@
+# /etc/systemd/system/cnm-modemctl.service
+
+[Unit]
+Description = modemctl service in caonima suite
+After = greetd.service
+
+[Service]
+Type = simple
+User = root
+Group = root
+
+ExecStartPre = /usr/bin/sleep 3
+ExecStart = /usr/bin/python3 {script_path}
+Restart = on-failure
+RestartSec = 5
+
+StandardOutput = journal
+StandardError = journal
+SyslogIdentifier = cnm-modemctl
+
+[Install]
+WantedBy = multi-user.target
