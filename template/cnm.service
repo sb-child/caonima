@@ -7,7 +7,7 @@ ExecStartPre=/usr/bin/sleep 1
 ExecStart=/usr/bin/python3 {script_path}
 Restart=on-failure
 RestartSec=5
-
+Environment=PYTHONUNBUFFERED=1
 StandardOutput = journal
 StandardError = journal
 SyslogIdentifier = cnm-{name}
