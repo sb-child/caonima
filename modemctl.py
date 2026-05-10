@@ -218,6 +218,7 @@ def detect_quectel_module():
     sysfs_usb_path = Path("/sys/bus/usb/devices")
 
     if not sysfs_usb_path.exists():
+        logging.warning("detect_quectel_module(): sysfs_usb_path not exists")
         return None
 
     for dev_dir in sysfs_usb_path.iterdir():
@@ -235,12 +236,13 @@ def detect_quectel_module():
             continue
 
         if vid == TARGET_VID and pid == TARGET_PID:
+            logging.info(f"detect_quectel_module(): found {vid}:{pid}")
             # 1. 检查是否为 SuperSpeed (USB 3.0/3.1)
             speed_file = dev_dir / "speed"
             speed = 0
             if speed_file.exists():
                 speed = int(speed_file.read_text().strip())
-
+            logging.info(f"detect_quectel_module(): speed {speed}")
             if speed < MIN_SPEED:
                 return None  # 速度不达标，跳过
 
@@ -249,17 +251,27 @@ def detect_quectel_module():
             for iface_dir in dev_dir.glob(f"{dev_dir.name}:*.{AT_INTERFACE_NUM}"):
                 at_interface_dir = iface_dir
                 break
+            logging.info(
+                f"detect_quectel_module(): interface dir {at_interface_dir}")
 
             if not at_interface_dir:
+                logging.warning(
+                    f"detect_quectel_module(): cannot find interface {AT_INTERFACE_NUM}")
                 return None  # 未枚举出接口 4，跳过
 
             # 3. 检查驱动是否加载并映射出 /dev/ttyUSBx
             tty_dirs = list(at_interface_dir.glob("ttyUSB*"))
+            logging.info(
+                f"detect_quectel_module(): checking {tty_dirs}")
             if not tty_dirs:
                 tty_dirs = list(at_interface_dir.glob("tty/ttyUSB*"))
+                logging.info(
+                    f"detect_quectel_module(): checking {tty_dirs}")
 
             if tty_dirs:
                 # 成功找到，返回绝对路径
+                logging.info(
+                    f"detect_quectel_module(): found /dev/{tty_dirs[0].name}")
                 return f"/dev/{tty_dirs[0].name}"
 
     # 遍历结束仍未返回，说明没找到
