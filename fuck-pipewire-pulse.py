@@ -4,9 +4,44 @@ import subprocess
 import threading
 import os
 import re
+import time
 
 CURRENT_DIR = Path(__file__).parent.resolve()
 AUDIO_FILE = CURRENT_DIR / "empty.wav"
+
+
+def play_audio(mac):
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        print(f"[{mac}] 开始播放音频 (第 {attempt}/{max_retries} 次尝试)...", flush=True)
+        try:
+            subprocess.run(
+                ["pw-play", str(AUDIO_FILE)],
+                timeout=2.0,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            print(f"[{mac}] 第 {attempt} 次尝试成功", flush=True)
+            break
+        except subprocess.TimeoutExpired:
+            print(
+                f"[{mac}] 第 {attempt} 次尝试发生阻塞, 进程已强制终止", flush=True)
+            if attempt < max_retries:
+                print(f"[{mac}] 等待 1.5 秒后进行下一次重试...", flush=True)
+                time.sleep(1.5)
+        except subprocess.CalledProcessError as e:
+            print(
+                f"[{mac}] 第 {attempt} 次尝试播放失败 (退出码 {e.returncode})", flush=True)
+            if attempt < max_retries:
+                print(f"[{mac}] 等待 1.5 秒后进行下一次重试...", flush=True)
+                time.sleep(1.5)
+        except Exception as e:
+            print(f"[{mac}] 执行 pw-play 时发生未知异常: {e}", flush=True)
+            break
+    else:
+        print(
+            f"[{mac}] 连续 {max_retries} 次执行 pw-play 均未成功, 放弃", flush=True)
 
 
 class BluetoothWarmup:
@@ -16,20 +51,7 @@ class BluetoothWarmup:
         self.is_connected = False
 
     def play_audio(self):
-        print(f"耳机 {self.mac} 已稳定连接 5 秒, 开始播放音频")
-        try:
-            subprocess.run(
-                ["pw-play", AUDIO_FILE],
-                timeout=2.0,
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            print("pw-play 播放完成")
-        except subprocess.TimeoutExpired:
-            print("pw-play 发生阻塞, 已强制终止进程")
-        except Exception as e:
-            print(f"执行 pw-play 时发生异常: {e}")
+        play_audio(self.mac)
 
     def on_connected(self):
         if not self.is_connected:
@@ -109,20 +131,7 @@ class UniversalBluetoothWarmup:
         return False
 
     def play_audio(self, mac):
-        print(f"[{mac}] 耳机已稳定连接 5 秒, 播放音频", flush=True)
-        try:
-            subprocess.run(
-                ["pw-play", str(AUDIO_FILE)],
-                timeout=2.0,
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            print(f"[{mac}] pw-play 播放完成，通道已打通", flush=True)
-        except subprocess.TimeoutExpired:
-            print(f"[{mac}] pw-play 发生阻塞, 已强制终止进程", flush=True)
-        except Exception as e:
-            print(f"[{mac}] 执行 pw-play 时发生异常: {e}", flush=True)
+        play_audio(mac)
 
     def on_connected(self, mac):
         if mac in self.timers:
