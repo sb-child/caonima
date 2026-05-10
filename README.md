@@ -125,3 +125,11 @@ spawn-at-startup "/path/to/spawn-me-first.py"
 # 部署所有支持的服务
 ./caoniman.py
 ```
+
+## [nima](https://github.com/sb-child/nima)
+
+我fork的[niri](https://github.com/niri-wm/niri)。
+
+你要知道niri对数位板和触摸屏的支持，就跟别的窗管一个样...
+
+但是我要用触摸屏和数位板。
