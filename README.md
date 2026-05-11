@@ -77,6 +77,25 @@ sudo systemctl restart cnm-modemctl.service
 
 - `cnm-fuck-pipewire-pulse.service` systemd用户服务, [一键部署](#caoniman)
 
+## [fuck-phira](./fuck-phira.py)
+
+因为pipewire不太聪明, 没有及时把采样率开到phira开的384k, 这是 workaround。
+
+我不理解为什么phira把主音源采样率锁在384k, 但游玩音源采样率可以自己调。
+
+**依赖项(Fedora软件包)**:
+
+- `python3` 脚本解释器
+- `pipewire` 被控制的
+
+**依赖项(systemd用户服务)**:
+
+- `pipewire.service` 被控制的
+
+**本体**:
+
+- `cnm-fuck-phira.service` systemd用户服务, [一键部署](#caoniman)
+
 ## [qmiset](./qmiset.py)
 
 Quectel QMI 模块每次开关都好麻烦，所以我提供了非常方便的解决方案:

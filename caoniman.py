@@ -9,6 +9,7 @@ TEMPLATE_FILENAME = "cnm.service"
 SERVICES_TO_DEPLOY = {
     "autorotate": "autorotate.py",
     "fuck-pipewire-pulse": "fuck-pipewire-pulse.py",
+    "fuck-phira": "fuck-phira.py",
     # "fsk": "fuck-screen-keyboard.py"
 }
 
