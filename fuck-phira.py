@@ -8,19 +8,20 @@ from typing import List
 
 
 PW_METADATA_BASE_CMD = ["pw-metadata", "-n", "settings", "0"]
-PHIRA_NAME = "PipeWire ALSA [phira-main]"
+# PHIRA_NAME = "PipeWire ALSA [phira-main]"
+PHIRA_NAME = "phira-main"
 
 
 class PipeWireMonitor(threading.Thread):
-    def __init__(self, callback, stream_callback=None):
+    def __init__(self, callback=None, on_stream_open=None, on_stream_close=None):
         super().__init__(daemon=True)
         self.callback = callback
-        self.stream_callback = stream_callback
+        self.on_stream_open = on_stream_open
+        self.on_stream_close = on_stream_close
         self.stop_event = threading.Event()
         self._debounce_timer = None
         self._lock = threading.Lock()
         self._last_state_hash = None
-        self._last_streams_hash = None
         self._active_streams = {}
 
     def run(self):
@@ -61,7 +62,6 @@ class PipeWireMonitor(threading.Thread):
             data = json.loads(result.stdout)
         except Exception:
             return
-
         default_sink_name = None
         for obj in data:
             is_metadata = obj.get("type") == "PipeWire:Interface:Metadata"
@@ -80,20 +80,15 @@ class PipeWireMonitor(threading.Thread):
                                 pass
                 if default_sink_name:
                     break
-
         target_node = None
-        streams = []
         current_streams = {}
-
         for obj in data:
             if obj.get("type") == "PipeWire:Interface:Node":
                 info = obj.get("info", {})
                 props = info.get("props", {})
                 node_id = obj.get("id")
-
                 if props.get("node.name") == default_sink_name:
                     target_node = obj
-
                 if props.get("media.class") == "Stream/Output/Audio":
                     app_name = props.get("application.name") or props.get(
                         "media.name") or props.get("node.name") or "Unknown"
@@ -101,7 +96,6 @@ class PipeWireMonitor(threading.Thread):
                     rate = 0
                     quantum = 0
                     params = info.get("params", {})
-
                     enum_fmt = params.get("EnumFormat", [])
                     if enum_fmt and isinstance(enum_fmt, list):
                         fmt_obj = enum_fmt[0]
@@ -109,7 +103,6 @@ class PipeWireMonitor(threading.Thread):
                             val = fmt_obj.get("value", fmt_obj)
                             fmt = val.get("format", fmt)
                             rate = val.get("rate", rate)
-
                     lat_str = props.get("node.latency", "")
                     if "/" in lat_str:
                         q, r = lat_str.split("/", 1)
@@ -117,24 +110,17 @@ class PipeWireMonitor(threading.Thread):
                             quantum = int(q)
                         if r.isdigit() and rate == 0:
                             rate = int(r)
-
                     if rate == 0:
                         rate_str = props.get("node.rate", "")
                         if "/" in rate_str:
                             r_split = rate_str.split("/")[1]
                             if r_split.isdigit():
                                 rate = int(r_split)
-
-                    # streams.append({
-                    #     "name": app_name,
-                    #     "rate": (fmt, quantum, rate)
-                    # })
                     current_streams[node_id] = {
                         "id": node_id,
                         "name": app_name,
                         "rate": (fmt, quantum, rate)
                     }
-
         if target_node:
             raw_state = target_node.get("info", {}).get("state", "unknown")
             state = raw_state.lower()
@@ -144,7 +130,6 @@ class PipeWireMonitor(threading.Thread):
             info = target_node.get("info", {})
             params = info.get("params", {})
             props = info.get("props", {})
-
             fmt_list = params.get("Format", [])
             if fmt_list:
                 fmt_obj = fmt_list[0]
@@ -152,7 +137,6 @@ class PipeWireMonitor(threading.Thread):
                     val = fmt_obj.get("value", fmt_obj)
                     fmt = val.get("format", fmt)
                     rate = val.get("rate", rate)
-
             lat_list = params.get("Latency", [])
             if lat_list:
                 lat_obj = lat_list[0]
@@ -161,7 +145,6 @@ class PipeWireMonitor(threading.Thread):
                     quantum = val.get("size", quantum)
                     if rate == 0:
                         rate = val.get("rate", rate)
-
             if quantum == 0 or rate == 0:
                 lat_str = props.get("node.latency", "")
                 if "/" in lat_str:
@@ -170,29 +153,29 @@ class PipeWireMonitor(threading.Thread):
                         quantum = int(q)
                     if r.isdigit() and rate == 0:
                         rate = int(r)
-
             if rate == 0:
                 rate_str = props.get("node.rate", "")
                 if "/" in rate_str:
                     rate = int(rate_str.split("/")[1])
-
             rate_tuple = (fmt, quantum, rate)
             current_state_hash = (default_sink_name, state, rate_tuple)
-
             with self._lock:
                 if current_state_hash != self._last_state_hash:
                     self._last_state_hash = current_state_hash
                     if self.callback:
                         self.callback(default_sink_name, state, rate_tuple)
-
-        if self.stream_callback:
-            streams.sort(key=lambda x: x["name"])
-            current_streams_hash = tuple(
-                (s["name"], s["rate"]) for s in streams)
-            with self._lock:
-                if current_streams_hash != self._last_streams_hash:
-                    self._last_streams_hash = current_streams_hash
-                    self.stream_callback(streams)
+        with self._lock:
+            current_ids = set(current_streams.keys())
+            previous_ids = set(self._active_streams.keys())
+            added_ids = current_ids - previous_ids
+            removed_ids = previous_ids - current_ids
+            for sid in added_ids:
+                if self.on_stream_open:
+                    self.on_stream_open(current_streams[sid])
+            for sid in removed_ids:
+                if self.on_stream_close:
+                    self.on_stream_close(self._active_streams[sid])
+            self._active_streams = current_streams
 
     def stop(self):
         self.stop_event.set()
@@ -208,7 +191,6 @@ def build_commands(rate: int, quantum: int) -> List[List[str]]:
         "clock.force-quantum": quantum,
         "clock.quantum": quantum,
     }
-
     cmds = []
     for key, value in properties.items():
         cmds.append(PW_METADATA_BASE_CMD + [key, str(value)])
@@ -245,15 +227,24 @@ def run_command(cmd: List[str], dry_run: bool = False) -> int:
         return 127
 
 
-PHIRA_LOCK = threading.Lock()
+def change_rate(sample_rate: int, quantum: int):
+    cmds = build_commands(sample_rate, quantum)
+    for cmd in cmds:
+        rc = run_command(cmd, dry_run=False)
+        if rc != 0:
+            return rc
+    return 0
 
 
-def on_phira_stream():
-    pass
+PHIRA_CURRENT_ID = 0
 
 
-def on_phira_close():
-    pass
+def on_phira_stream_open():
+    change_rate(384000, 128)
+
+
+def on_phira_stream_close():
+    change_rate(48000, 512)
 
 
 if __name__ == '__main__':
@@ -267,14 +258,37 @@ if __name__ == '__main__':
         print(
             f"[主设备变更] {name} 状态: {state} 格式={fmt}, Quantum={quantum}, 采样率={sample_rate}")
 
-    def on_streams(streams):
-        print(f"[播放源更新] 当前活跃数量: {len(streams)}")
-        for stream in streams:
-            fmt, quantum, sample_rate = stream["rate"]
-            name = stream["name"]
-            print(f"源: {name} 格式={fmt}, Quantum={quantum}, 采样率={sample_rate}")
+    def handle_stream_open(stream):
+        global PHIRA_CURRENT_ID
+        fmt, quantum, sample_rate = stream["rate"]
+        print(
+            f"[+] 流开启 ID: {stream['id']:<4} 源: {stream['name']} (格式={fmt}, Quantum={quantum}, 采样率={sample_rate})")
+        stream_name = str(stream['name'])
+        stream_id = str(stream['id'])
+        stream_sample_rate = int(sample_rate)
+        if stream_name.find(PHIRA_NAME) != -1 and stream_sample_rate == 384000:
+            PHIRA_CURRENT_ID = stream_id
+            print(f"on_phira_stream_open(): PHIRA_CURRENT_ID = {stream_id}")
+            on_phira_stream_open()
 
-    monitor = PipeWireMonitor(callback=on_device, stream_callback=on_streams)
+    def handle_stream_close(stream):
+        global PHIRA_CURRENT_ID
+        print(f"[-] 流关闭 ID: {stream['id']:<4} 源: {stream['name']}")
+        stream_name = str(stream['name'])
+        stream_id = str(stream['id'])
+        if stream_name.find(PHIRA_NAME) != -1 and stream_id == PHIRA_CURRENT_ID:
+            print(
+                f"on_phira_stream_close(): PHIRA_CURRENT_ID = {stream_id}")
+            on_phira_stream_close()
+            print(
+                f"on_phira_stream_close(): reset PHIRA_CURRENT_ID")
+            PHIRA_CURRENT_ID = 0
+
+    monitor = PipeWireMonitor(
+        callback=on_device,
+        on_stream_open=handle_stream_open,
+        on_stream_close=handle_stream_close
+    )
     monitor.start()
 
     try:
