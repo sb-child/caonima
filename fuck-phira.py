@@ -218,6 +218,25 @@ class PipeWireMonitor(threading.Thread):
         self._check_event.set()
 
 
+def send_notification(title, message, app_name="cnm-fuck-phira", icon="drive-removable-media", timeout=2000):
+    print(f"send_notification: title: {title}, message: {message}")
+    cmd = [
+        "gdbus", "call", "--session",
+        "--dest", "org.freedesktop.Notifications",
+        "--object-path", "/org/freedesktop/Notifications",
+        "--method", "org.freedesktop.Notifications.Notify",
+        app_name, "0", icon, title, message, "[]", "{}", str(timeout)
+    ]
+    safe_cmd = " ".join(shlex.quote(arg) for arg in cmd)
+    try:
+        subprocess.run(safe_cmd, shell=True, check=True,
+                       capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        print(f"send_notification: 错误码: {e.returncode}, 错误输出: {e.stderr}")
+    except Exception as e:
+        print(f"send_notification: 未知错误: {e}")
+
+
 def build_commands(rate: int, quantum: int) -> List[List[str]]:
     properties = {
         "clock.rate": rate,
@@ -365,6 +384,7 @@ AUDIO_FILE = CURRENT_DIR / "empty.wav"
 
 
 def play_audio():
+    send_notification("正在播放空音频", "你等两秒")
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         print(
