@@ -2,7 +2,7 @@
 
 some hacks for https://github.com/sb-child/nima
 
-have fun!
+~~have fun!~~ 以后我再也不写这种东西了
 
 ## [autorotate](./autorotate.py)
 
@@ -55,6 +55,15 @@ sudo systemctl enable cnm-modemctl.service
 sudo systemctl restart cnm-modemctl.service
 ```
 
+**依赖项(Fedora软件包)**:
+
+- `python3` 脚本解释器
+- `glib2` 要用 `gdbus` 发送通知
+
+**本体**:
+
+- `cnm-modemctl.service` systemd系统服务
+
 ## [fuck-pipewire-pulse](./fuck-pipewire-pulse.py)
 
 有个关于 `pipewire-pulse` 与蓝牙音频设备的死锁还没有找到问题源头，这是 workaround。
@@ -83,7 +92,7 @@ sudo systemctl restart cnm-modemctl.service
 
 我不理解为什么phira把主音源采样率锁在384k, 但游玩音源采样率可以自己调。
 
-它包含了 [fuck-pipewire-pulse](#fuck-pipewire-pulse) 已经实现的叫醒服务，但是这次它 handle 了所有的音频输出设备。
+它包含了 [fuck-pipewire-pulse](#fuck-pipewire-pulse) 已经实现的叫醒服务，但是这次它 handle 了所有的音频输出设备，然后亲切的弹个通知给你。
 
 它的另一个很奇怪的功能是在没有音频输出设备时杀几个进程，详情见[此处](./fuck-phira.md)。
 
@@ -92,6 +101,7 @@ sudo systemctl restart cnm-modemctl.service
 - `python3` 脚本解释器
 - `python3-psutil` 脚本强依赖
 - `pipewire` 被控制的
+- `glib2` 要用 `gdbus` 发送通知
 
 **依赖项(systemd用户服务)**:
 
