@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 import json
+import time
 from typing import List
 
 
@@ -19,12 +20,26 @@ class PipeWireMonitor(threading.Thread):
         self.on_stream_open = on_stream_open
         self.on_stream_close = on_stream_close
         self.stop_event = threading.Event()
-        self._debounce_timer = None
+        self._check_event = threading.Event()
         self._lock = threading.Lock()
         self._last_state_hash = None
         self._active_streams = {}
+        self._worker_thread = threading.Thread(
+            target=self._debounced_worker, daemon=True)
+        self._worker_thread.start()
+
+    def _debounced_worker(self):
+        """消费者线程"""
+        while not self.stop_event.is_set():
+            if self._check_event.wait(timeout=1.0):
+                self._check_event.clear()
+                time.sleep(0.1)
+                self._check_event.clear()
+                if not self.stop_event.is_set():
+                    self.do_check()
 
     def run(self):
+        """生产者线程"""
         while not self.stop_event.is_set():
             process = None
             try:
@@ -34,26 +49,19 @@ class PipeWireMonitor(threading.Thread):
                     stderr=subprocess.DEVNULL,
                     text=True
                 )
-                self.trigger_state_check()
+                self._check_event.set()
                 for line in iter(process.stdout.readline, ''):  # type: ignore
                     if self.stop_event.is_set():
                         break
                     if line.strip():
-                        self.trigger_state_check()
+                        self._check_event.set()
                 process.stdout.close()  # type: ignore
                 process.wait()
             except Exception:
                 if process:
                     process.kill()
             if not self.stop_event.is_set():
-                self.stop_event.wait(1.0)
-
-    def trigger_state_check(self):
-        with self._lock:
-            if self._debounce_timer is not None:
-                self._debounce_timer.cancel()
-            self._debounce_timer = threading.Timer(0.1, self.do_check)
-            self._debounce_timer.start()
+                time.sleep(1.0)
 
     def do_check(self):
         try:
@@ -179,8 +187,7 @@ class PipeWireMonitor(threading.Thread):
 
     def stop(self):
         self.stop_event.set()
-        if self._debounce_timer:
-            self._debounce_timer.cancel()
+        self._check_event.set()
 
 
 def build_commands(rate: int, quantum: int) -> List[List[str]]:
@@ -290,9 +297,9 @@ if __name__ == '__main__':
         on_stream_close=handle_stream_close
     )
     monitor.start()
-
     try:
-        threading.Event().wait()
+        while True:
+            time.sleep(86400)
     except KeyboardInterrupt:
         monitor.stop()
         monitor.join()
