@@ -137,6 +137,7 @@ spawn-at-startup "/path/to/spawn-me-first.py"
 
 - `autorotate` [这里](#autorotate)
 - `fuck-pipewire-pulse` [这里](#fuck-pipewire-pulse)
+- `fuck-phira` [这里](#fuck-phira)
 
 **部署**:
 
