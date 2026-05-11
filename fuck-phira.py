@@ -16,18 +16,19 @@ PHIRA_NAME = "phira-main"
 
 
 class PipeWireMonitor(threading.Thread):
-    def __init__(self, callback=None, on_stream_open=None, on_stream_close=None, on_sink_unavailable=None):
+    def __init__(self, callback=None, on_stream_open=None, on_stream_close=None, on_sink_unavailable=None, on_sink_available=None):
         super().__init__(daemon=True)
         self.callback = callback
         self.on_stream_open = on_stream_open
         self.on_stream_close = on_stream_close
         self.on_sink_unavailable = on_sink_unavailable
+        self.on_sink_available = on_sink_available
         self.stop_event = threading.Event()
         self._check_event = threading.Event()
         self._lock = threading.Lock()
         self._last_state_hash = None
         self._active_streams = {}
-        self._sink_unavailable_triggered = False
+        self._last_physical_sinks = None
         self._worker_thread = threading.Thread(
             target=self._debounced_worker, daemon=True)
         self._worker_thread.start()
@@ -94,7 +95,7 @@ class PipeWireMonitor(threading.Thread):
                     break
         target_node = None
         current_streams = {}
-        sink_count = 0
+        current_physical_sinks = set()
         for obj in data:
             if obj.get("type") == "PipeWire:Interface:Node":
                 info = obj.get("info", {})
@@ -112,7 +113,7 @@ class PipeWireMonitor(threading.Thread):
                     )
                     is_virtual = "loopback" in node_name.lower() or "dummy" in node_name.lower()
                     if is_physical_sink and not is_virtual:
-                        sink_count += 1
+                        current_physical_sinks.add((node_id, node_name))
                 if props.get("media.class") == "Stream/Output/Audio":
                     app_name = props.get("application.name") or props.get(
                         "media.name") or props.get("node.name") or "Unknown"
@@ -200,13 +201,17 @@ class PipeWireMonitor(threading.Thread):
                 if self.on_stream_close:
                     self.on_stream_close(self._active_streams[sid])
             self._active_streams = current_streams
-            if sink_count == 0:
-                if not self._sink_unavailable_triggered:
-                    self._sink_unavailable_triggered = True
-                    if self.on_sink_unavailable:
-                        self.on_sink_unavailable()
-            else:
-                self._sink_unavailable_triggered = False
+            if self._last_physical_sinks is None:
+                if len(current_physical_sinks) == 0 and self.on_sink_unavailable:
+                    self.on_sink_unavailable()
+                elif len(current_physical_sinks) > 0 and self.on_sink_available:
+                    self.on_sink_available()
+            elif current_physical_sinks != self._last_physical_sinks:
+                if len(current_physical_sinks) == 0 and self.on_sink_unavailable:
+                    self.on_sink_unavailable()
+                elif self.on_sink_available:
+                    self.on_sink_available()
+            self._last_physical_sinks = current_physical_sinks
 
     def stop(self):
         self.stop_event.set()
@@ -355,6 +360,47 @@ def kill_program_on_sink_unavailable():
     pass
 
 
+CURRENT_DIR = Path(__file__).parent.resolve()
+AUDIO_FILE = CURRENT_DIR / "empty.wav"
+
+
+def play_audio():
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        print(
+            f"play_audio: 开始播放音频 (第 {attempt}/{max_retries} 次尝试)...", flush=True)
+        try:
+            subprocess.run(
+                ["pw-play", str(AUDIO_FILE)],
+                timeout=2.0,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            print(f"play_audio: 第 {attempt} 次尝试成功", flush=True)
+            break
+        except subprocess.TimeoutExpired:
+            print(
+                f"play_audio: 第 {attempt} 次尝试发生阻塞, 进程已强制终止", flush=True)
+            if attempt < max_retries:
+                print(f"等待 1.5 秒后进行下一次重试...", flush=True)
+                time.sleep(1.5)
+        except subprocess.CalledProcessError as e:
+            print(
+                f"play_audio: 第 {attempt} 次尝试播放失败 (退出码 {e.returncode})", flush=True)
+            if attempt < max_retries:
+                print(f"等待 1.5 秒后进行下一次重试...", flush=True)
+                time.sleep(1.5)
+        except Exception as e:
+            print(f"play_audio: 执行 pw-play 时发生未知异常: {e}", flush=True)
+            break
+    else:
+        print(
+            f"play_audio: 连续 {max_retries} 次执行 pw-play 均未成功, 放弃", flush=True)
+
+
+PLAY_AUDIO_TIMER = None
+
 if __name__ == '__main__':
     def on_device(name, state, rate):
         fmt, quantum, sample_rate = rate
@@ -393,14 +439,30 @@ if __name__ == '__main__':
             PHIRA_CURRENT_ID = 0
 
     def on_sink_unavailable():
+        global PLAY_AUDIO_TIMER
         print("[Sink] 没有物理 Sink 可用")
+        if PLAY_AUDIO_TIMER is not None:
+            PLAY_AUDIO_TIMER.cancel()
+            print("[Sink] PLAY_AUDIO_TIMER 定时器已被取消")
         kill_program_on_sink_unavailable()
+
+    def on_sink_available():
+        global PLAY_AUDIO_TIMER
+        print("[Sink] 有物理 Sink 可用")
+        if PLAY_AUDIO_TIMER is not None:
+            PLAY_AUDIO_TIMER.cancel()
+            print("[Sink] PLAY_AUDIO_TIMER 定时器已重置为 5 秒")
+        else:
+            print("[Sink] PLAY_AUDIO_TIMER 启动 5 秒定时器")
+        PLAY_AUDIO_TIMER = threading.Timer(5.0, play_audio)
+        PLAY_AUDIO_TIMER.start()
 
     monitor = PipeWireMonitor(
         callback=on_device,
         on_stream_open=handle_stream_open,
         on_stream_close=handle_stream_close,
         on_sink_unavailable=on_sink_unavailable,
+        on_sink_available=on_sink_available,
     )
     monitor.start()
     try:

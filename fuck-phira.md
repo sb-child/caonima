@@ -1,6 +1,8 @@
 # fuck-phira 详细文档
 
-除了改采样率，本程序的另一个用途是，在没有输出设备(Audio Sink)可用时，通过[配置文件](#配置文件文档)规则匹配进程并发送信号(signal)。
+除了为 phira 改采样率，和像 [fuck-pipewire-pulse](./fuck-pipewire-pulse.py) 那样叫醒 pipewire 之外...
+
+本程序的另一个用途是，在没有输出设备(Audio Sink)可用时，通过[配置文件](#配置文件文档)规则匹配进程并发送信号(signal)。
 
 ## 配置文件文档
 
