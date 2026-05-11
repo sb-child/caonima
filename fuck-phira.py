@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 import shlex
 import subprocess
 import sys
@@ -6,6 +7,7 @@ import threading
 import json
 import time
 from typing import List
+import psutil
 
 
 PW_METADATA_BASE_CMD = ["pw-metadata", "-n", "settings", "0"]
@@ -14,16 +16,18 @@ PHIRA_NAME = "phira-main"
 
 
 class PipeWireMonitor(threading.Thread):
-    def __init__(self, callback=None, on_stream_open=None, on_stream_close=None):
+    def __init__(self, callback=None, on_stream_open=None, on_stream_close=None, on_sink_unavailable=None):
         super().__init__(daemon=True)
         self.callback = callback
         self.on_stream_open = on_stream_open
         self.on_stream_close = on_stream_close
+        self.on_sink_unavailable = on_sink_unavailable
         self.stop_event = threading.Event()
         self._check_event = threading.Event()
         self._lock = threading.Lock()
         self._last_state_hash = None
         self._active_streams = {}
+        self._sink_unavailable_triggered = False
         self._worker_thread = threading.Thread(
             target=self._debounced_worker, daemon=True)
         self._worker_thread.start()
@@ -90,6 +94,7 @@ class PipeWireMonitor(threading.Thread):
                     break
         target_node = None
         current_streams = {}
+        sink_count = 0
         for obj in data:
             if obj.get("type") == "PipeWire:Interface:Node":
                 info = obj.get("info", {})
@@ -97,6 +102,17 @@ class PipeWireMonitor(threading.Thread):
                 node_id = obj.get("id")
                 if props.get("node.name") == default_sink_name:
                     target_node = obj
+                if props.get("media.class") == "Audio/Sink":
+                    node_name = props.get("node.name", "")
+                    device_api = props.get("device.api", "")
+                    is_physical_sink = (
+                        device_api in ("alsa", "bluez5") or
+                        node_name.startswith("alsa_output.") or
+                        node_name.startswith("bluez_output.")
+                    )
+                    is_virtual = "loopback" in node_name.lower() or "dummy" in node_name.lower()
+                    if is_physical_sink and not is_virtual:
+                        sink_count += 1
                 if props.get("media.class") == "Stream/Output/Audio":
                     app_name = props.get("application.name") or props.get(
                         "media.name") or props.get("node.name") or "Unknown"
@@ -184,6 +200,13 @@ class PipeWireMonitor(threading.Thread):
                 if self.on_stream_close:
                     self.on_stream_close(self._active_streams[sid])
             self._active_streams = current_streams
+            if sink_count == 0:
+                if not self._sink_unavailable_triggered:
+                    self._sink_unavailable_triggered = True
+                    if self.on_sink_unavailable:
+                        self.on_sink_unavailable()
+            else:
+                self._sink_unavailable_triggered = False
 
     def stop(self):
         self.stop_event.set()
@@ -254,6 +277,84 @@ def on_phira_stream_close():
     change_rate(48000, 512)
 
 
+def send_signal(conf_file: Path):
+    print(f"send_signal: 加载配置文件: {conf_file}")
+    try:
+        with open(conf_file, 'r', encoding='utf-8') as f:
+            raw_content = f.read()
+        config = json.loads(raw_content)
+        if not isinstance(config, list):
+            raise ValueError("配置文件的根节点必须是一个 JSON 数组")
+    except FileNotFoundError:
+        print(f"send_signal: 找不到配置文件: {conf_file}")
+        return False
+    except json.JSONDecodeError as e:
+        print(f"send_signal: JSON 格式解析失败: {e}")
+        return False
+    except Exception as e:
+        print(f"send_signal: 加载配置文件时发生未知错误: {e}")
+        return False
+    print(f"send_signal: 发现 {len(config)} 个选择器")
+    for index, selector in enumerate(config):
+        desc = selector.get('desc', f'selector_{index}')
+        target_name = selector.get('name')
+        target_fullpath = selector.get('fullpath')
+        signal_num = selector.get('signal')
+        print(f"send_signal: 处理选择器: {index} - {desc}")
+        if target_name is None and target_fullpath is None:
+            print(f"send_signal: 跳过 {index} - {desc}: name 和 fullpath 均为 null")
+            continue
+        if signal_num is None:
+            print(f"send_signal: 跳过 {index} - {desc}: 未配置 signal 字段")
+            continue
+        try:
+            signal_num = int(signal_num)
+        except ValueError:
+            print(
+                f"send_signal: 跳过 {index} - {desc}: 无效的 signal 值: {signal_num}")
+            continue
+        matched_any = False
+        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+            try:
+                p_info = proc.info
+                p_name = p_info.get('name')
+                p_exe = p_info.get('exe')
+                p_pid = p_info.get('pid')
+                name_match = (target_name is None) or (p_name == target_name)
+                path_match = (target_fullpath is None) or (
+                    p_exe == target_fullpath)
+                if name_match and path_match:
+                    matched_any = True
+                    print(
+                        f"send_signal: 命中 {index} - {desc}: 匹配程序: PID={p_pid}, 进程名={p_name}, 路径={p_exe}")
+                    try:
+                        proc.send_signal(signal_num)
+                        print(
+                            f"send_signal: {index} - {desc}: 已向 PID {p_pid} 发送信号 {signal_num}")
+                    except psutil.AccessDenied:
+                        print(
+                            f"send_signal: {index} - {desc}: 权限不足, 无法向 PID {p_pid} 发送信号")
+                    except psutil.NoSuchProcess:
+                        print(
+                            f"send_signal: {index} - {desc}: 进程 PID {p_pid} 已在尝试发送信号前终止")
+                    except Exception as e:
+                        print(f"send_signal: {index} - {desc}: 发送信号时发生异常: {e}")
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+
+        if not matched_any:
+            print("send_signal: 此选择器未匹配到任何活动进程")
+    return True
+
+
+def kill_program_on_sink_unavailable():
+    home = Path.home()
+    p = home / ".caonima" / "fuck-phira" / "kill_program_on_sink_unavailable.json"
+    send_signal(p)
+    pass
+
+
 if __name__ == '__main__':
     def on_device(name, state, rate):
         fmt, quantum, sample_rate = rate
@@ -291,10 +392,15 @@ if __name__ == '__main__':
                 f"on_phira_stream_close(): reset PHIRA_CURRENT_ID")
             PHIRA_CURRENT_ID = 0
 
+    def on_sink_unavailable():
+        print("[Sink] 没有物理 Sink 可用")
+        kill_program_on_sink_unavailable()
+
     monitor = PipeWireMonitor(
         callback=on_device,
         on_stream_open=handle_stream_open,
-        on_stream_close=handle_stream_close
+        on_stream_close=handle_stream_close,
+        on_sink_unavailable=on_sink_unavailable,
     )
     monitor.start()
     try:

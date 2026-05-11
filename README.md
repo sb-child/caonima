@@ -83,9 +83,12 @@ sudo systemctl restart cnm-modemctl.service
 
 我不理解为什么phira把主音源采样率锁在384k, 但游玩音源采样率可以自己调。
 
+它的另一个功能是在没有音频输出设备时杀几个进程，详情见[此处](./fuck-phira.md)。
+
 **依赖项(Fedora软件包)**:
 
 - `python3` 脚本解释器
+- `python3-psutil` 脚本强依赖
 - `pipewire` 被控制的
 
 **依赖项(systemd用户服务)**:
@@ -95,6 +98,7 @@ sudo systemctl restart cnm-modemctl.service
 **本体**:
 
 - `cnm-fuck-phira.service` systemd用户服务, [一键部署](#caoniman)
+- `kill_program_on_sink_unavailable.json` 配置文件, [详情](./fuck-phira.md)
 
 ## [qmiset](./qmiset.py)
 
