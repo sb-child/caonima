@@ -71,7 +71,6 @@ def run_command(cmd: List[str], dry_run: bool = False) -> int:
         if completed.stderr:
             print(completed.stderr.strip(), file=sys.stderr)
         return 0
-
     except subprocess.CalledProcessError as e:
         print(f"命令执行失败, 返回非零退出码 {e.returncode}", file=sys.stderr)
         if e.stdout:
@@ -79,7 +78,6 @@ def run_command(cmd: List[str], dry_run: bool = False) -> int:
         if e.stderr:
             print(e.stderr.strip(), file=sys.stderr)
         return e.returncode
-
     except FileNotFoundError:
         print("错误: 找不到命令 'pw-metadata'", file=sys.stderr)
         return 127
