@@ -38,7 +38,7 @@ class PipeWireMonitor(threading.Thread):
         while not self.stop_event.is_set():
             if self._check_event.wait(timeout=1.0):
                 self._check_event.clear()
-                time.sleep(0.1)
+                time.sleep(1)
                 self._check_event.clear()
                 if not self.stop_event.is_set():
                     self.do_check()
@@ -319,26 +319,27 @@ def send_signal(conf_file: Path):
         print(f"send_signal: 加载配置文件时发生未知错误: {e}")
         return False
     print(f"send_signal: 发现 {len(config)} 个选择器")
-    for index, selector in enumerate(config):
-        desc = selector.get('desc', f'selector_{index}')
-        target_name = selector.get('name')
-        target_fullpath = selector.get('fullpath')
-        signal_num = selector.get('signal')
-        print(f"send_signal: 处理选择器: {index} - {desc}")
-        if target_name is None and target_fullpath is None:
-            print(f"send_signal: 跳过 {index} - {desc}: name 和 fullpath 均为 null")
-            continue
-        if signal_num is None:
-            print(f"send_signal: 跳过 {index} - {desc}: 未配置 signal 字段")
-            continue
-        try:
-            signal_num = int(signal_num)
-        except ValueError:
-            print(
-                f"send_signal: 跳过 {index} - {desc}: 无效的 signal 值: {signal_num}")
-            continue
+    for proc in psutil.process_iter(['pid', 'name', 'exe']):
         matched_any = False
-        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+        for index, selector in enumerate(config):
+            desc = selector.get('desc', f'selector_{index}')
+            target_name = selector.get('name')
+            target_fullpath = selector.get('fullpath')
+            signal_num = selector.get('signal')
+            print(f"send_signal: 处理选择器: {index} - {desc}")
+            if target_name is None and target_fullpath is None:
+                print(
+                    f"send_signal: 跳过 {index} - {desc}: name 和 fullpath 均为 null")
+                continue
+            if signal_num is None:
+                print(f"send_signal: 跳过 {index} - {desc}: 未配置 signal 字段")
+                continue
+            try:
+                signal_num = int(signal_num)
+            except ValueError:
+                print(
+                    f"send_signal: 跳过 {index} - {desc}: 无效的 signal 值: {signal_num}")
+                continue
             try:
                 p_info = proc.info
                 p_name = p_info.get('name')
